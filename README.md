@@ -1,0 +1,3 @@
+# bittorrent
+A BitTorrent client implementation in python
+# More info comming soon...
