@@ -1,0 +1,27 @@
+Mostly python3 dont have support for bencoding
+coroutines - function which can be paused and resumed
+yield - give control to some other coroutine
+task - runs coroutines
+use packages to communicate with server, there are different types of server
+UDP and HTTP
+Peers have state we have to save them
+Chocked(not allowed to request and will not respond to request) and Interested(want to download a piece of file)
+Peers messages
+Handshake, keepalive, choke, unchoke, interested, not interested, have, bitfield, request, piece
+Initial state - chocked and not interested
+want to get to
+coperative state - unchocked and interested
+1. wait for unchock message
+2. send interested message
+peer exchange protocol
+create a tcp connection
+we will send a client handshake
+peer will confirm
+wait for peer to give unchock message
+send an interested message
+have message - have 1, have 2, dont have 3, etc
+bitfields - array of boolean
+request message -
+######################COMMANDS###################################
+await - maybe just pause execution
+			  if followed by some function give control to it
