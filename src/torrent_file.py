@@ -1,5 +1,6 @@
 from bencodepy import decode_from_file
-class torrent:
+import sys
+class torrent_file:
     def __init__(self, torrent_file):
         '''
         Initialise various variables for a torrent.
@@ -32,5 +33,5 @@ class torrent:
         print("Length :- " + str(self.length))
 
 if __name__ == '__main__':
-    bdot = torrent('./bdot.torrent')
-    bdot.print_file_info()
+    torrent = torrent_file(sys.argv[1])
+    torrent.print_file_info()

@@ -1,0 +1,25 @@
+Overall designed of bittorrent
+will include following things
+	different part - torrent, file, tracker, peer, algorithms
+	threads - main thread, tracker, main peer thread(mostly main thread), each peer thread
+made logger design - is logger thread safe - if many logger are writing to same file
+	logger -> file, torrent, tracker, peers
+	handler -> file, console(for development purposes redirect file to console too)
+	formatter -> file :- level name, name, file, funcName, line no, message, stackinfo/excpinfo
+				console :- levelname, message(will be close for development purposes)
+
+thread locking needed for :-
+	torrent
+		lock for each peer data - shared by tracker, main peer thread, that peer thread
+		upload, download, left bytes
+	tracker
+	peers and main peers
+		upspeed, downspeed, 4 state variable, pieces it have, requested pieces, requesting piece
+	file
+		lock for permission for getting each piece for download
+		partially downloaded pieces will remain in RAM(NO) so lock for writing to that buffer
+		lock for freq of each peer
+		konta piece kontya peer kadhe ahe
+		konta piece koth paryanta download jala ahe
+		konta piece in request ahe ani kon karat ahe ani if downloading started(if started others must not request same piece)
+		at a time request counter
