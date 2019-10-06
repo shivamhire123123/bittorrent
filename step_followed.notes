@@ -2,7 +2,7 @@ Overall designed of bittorrent
 will include following things
 	different part - torrent, file, tracker, peer, algorithms
 	threads - main thread, tracker, main peer thread(mostly main thread), each peer thread
-made logger design - is logger thread safe - if many logger are writing to same file
+made logger design - is logger thread safe - if many logger are writing to same file - YES
 	logger -> file, torrent, tracker, peers
 	handler -> file, console(for development purposes redirect file to console too)
 	formatter -> file :- level name, name, file, funcName, line no, message, stackinfo/excpinfo
@@ -23,3 +23,8 @@ thread locking needed for :-
 		konta piece koth paryanta download jala ahe
 		konta piece in request ahe ani kon karat ahe ani if downloading started(if started others must not request same piece)
 		at a time request counter
+
+functions of each thread :-
+	tracker thread - what will happen to connection which are connected when the thread is not in .accept() function? will the connection gets rejected
+		handle updating various data from trackers
+		accept connection of peers on socket and pass it to main thread

@@ -1,4 +1,5 @@
 from bencodepy import decode_from_file
+from torrent_logger import *
 import sys
 class torrent_file:
     def __init__(self, torrent_file):
@@ -22,16 +23,13 @@ class torrent_file:
         self.piece = self.file_extract[b'info'][b'pieces']
         self.name = self.file_extract[b'info'][b'name'].decode()
         self.length = self.file_extract[b'info'][b'length']
+        self.print_file_info()
 
     def print_file_info(self):
-        print("Trackers :-")
+        torrent_logger.debug("Trackers :-")
         for i in self.tracker:
-            print("\t" + i)
-        print("Piece length :- " + str(self.piece_len))
-        print("Hash :- " + str(self.piece.hex()))
-        print("Name :- " + self.name)
-        print("Length :- " + str(self.length))
-
-if __name__ == '__main__':
-    torrent = torrent_file(sys.argv[1])
-    torrent.print_file_info()
+            torrent_logger.debug("\t" + i)
+        torrent_logger.debug("Piece length :- " + str(self.piece_len))
+#        torrent_logger.debug("Hash :- " + str(self.piece.hex()))
+        torrent_logger.debug("Name :- " + self.name)
+        torrent_logger.debug("Length :- " + str(self.length))

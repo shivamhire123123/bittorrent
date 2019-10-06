@@ -1,0 +1,13 @@
+.part file
+	create a function which extract info from file and initialise torrent object
+	call it part_file, it accept
+		file_path string -> path to .part file
+		torrent object -> torrent object to be initialise
+	in torrent.py creating .part file part in init function
+tracker
+	a tracker object and its init function, this function accepts
+		tracker list
+		port for peers to connect to this client
+	in each tracker specific implementation have a .get_peers_from_tracker() function which will
+	send data to trackers and parse
+	in get_peers_from_tracker handle errors

@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+import sys
 
 '''
     There will be following loggers
@@ -51,4 +52,4 @@ peers_logger.addHandler(file_handler)
 peers_logger.addHandler(console_handler)
 
 # Printing time to differentiate between different instance of program
-torrent_logger.debug(str(datetime.now()) + ' BitTorrent program started')
+torrent_logger.debug(str(datetime.now()) + ' BitTorrent program started with argument ' + str(sys.argv))
