@@ -71,9 +71,10 @@ class http_tracker(base_tracker):
             self.payload['event'] = state
         elif event in self.payload:
             del self.payload['event']
+        tracker_logger.debug("Sending request to " + self.url)
         self.tracker_respond = requests.get(self.url, params = self.payload)
         tracker_logger.debug("Content of tracker response " +
-                            self.tracker_respond.content)
+                            str(self.tracker_respond.content))
         self.tracker_respond_content = bencodepy.decode(self.tracker_respond.content)
         #TODO check response to see if it has some errors
         # check compact compatibility and accordingly filtering response
@@ -97,6 +98,7 @@ class http_tracker(base_tracker):
         if b'tracker id' in self.tracker_respond_content:
             self.tracker_id = self.tracker_respond_content[b'tracker id']
         self.last_request_on = datetime.now()
+        tracker_logger.debug("Peers list - " + str(peers_list))
         return peers_list
 
 class udp_tracker(base_tracker):

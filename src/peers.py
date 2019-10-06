@@ -1,6 +1,9 @@
 import tracker
 import torrent_file
 import sys
+import struct
+from socket import *
+from torrent_logger import *
 
 def filter_tracker(tracker, protocol):
     ''' This function takes a list of strings contaning url to different trackers
@@ -27,13 +30,34 @@ class peers:
         # Use to communicate to peer
         self.ip = ip
         self.connection_port = port
-        sef.connected_port = None
+        self.socket = None
 
-    def handshake(self):
+    def handshake(self, torrent):
         self.pstr = "BitTorrent protocol"
-        self.pstrlen = len(self.pstr)
-        self.reserved = 0
-        return NotImplemented
+        self.pstrlen = struct.pack("!B", len(self.pstr))
+        self.pstr = struct.pack("!" + str(len(self.pstr)) + "s", self.pstr.encode())
+        self.reserved = struct.pack("!Q", 0)
+        self.info_hash = b''
+        print(torrent.info_hash.digest())
+        print(torrent.peer_id)
+        for i in torrent.info_hash.digest():
+            self.info_hash += struct.pack("!B", i)
+        self.peer_id = b''
+        for i in torrent.peer_id:
+            self.peer_id += struct.pack("!B", i)
+
+        self.socket = socket(AF_INET, SOCK_STREAM)
+        self.socket.connect((self.ip, self.connection_port))
+        peers_logger.debug("pstrlen - " + str(self.pstrlen))
+        peers_logger.debug("pstr - " + str(self.pstr))
+        peers_logger.debug("info_hash - " + str(self.info_hash))
+        peers_logger.debug("peer_id - " + str(self.peer_id))
+        peers_logger.debug("length of info_hash and peer_id is " + str(len(self.info_hash)) + " and " + str(len(self.peer_id)))
+        handshake = self.pstrlen + self.pstr + self.reserved + self.info_hash + self.peer_id
+        peers_logger.debug("Sending " + str(handshake) + " to " + self.ip)
+        self.socket.send(handshake)
+        response = self.socket.recv(1024)
+        peers_logger.debug("Received " + str(response) + " from " + self.ip)
 
 
 

@@ -9,6 +9,7 @@ import sys
 import os
 from datetime import datetime
 import tracker
+import peers
 
 class torrent:
     def __init__(self, torrent_file_path = None, part_file_path = None):
@@ -69,9 +70,27 @@ class torrent:
         if (torrent_file_path != None):
             torrent_logger.error(".part file code not implemented")
 
-    def get_peers(self, num_of_peers = 20):
-        
+    def get_peers(self, num_of_peers = 20, peer_list = None):
+        if peer_list == None:
+            self.peer_list = []
+            temp_list = []
+            for tracker in self.trackers.http_tracker:
+                temp_list = tracker.get_peers_from_tracker(num_of_peers)
+                torrent_logger.debug("Got " + str(len(temp_list)) + " peers")
+                self.peer_list += temp_list
+                num_of_peers -= len(temp_list)
+                torrent_logger.debug(str(num_of_peers) + " peers remaning")
+                if num_of_peers <= 0:
+                    num_of_peers = 0
+                    break
+        else:
+            self.peer_list = peer_list
+        self.peers = []
+        for peer in self.peer_list:
+            self.peers.append(peers.peers(peer[0], peer[1]))
 
 if __name__ == '__main__':
     tor = torrent(sys.argv[1])
-
+    peer_list = [['62.210.209.146', 51413], ['185.44.107.109', 51413], ['77.13.17.35', 51413], ['185.203.56.6', 61005], ['82.56.184.243', 51413], ['110.175.89.172', 6904], ['89.178.161.105', 51413], ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21', 51413]]
+    tor.get_peers(10, peer_list = peer_list)
+    tor.peers[0].handshake(tor)
