@@ -93,4 +93,6 @@ if __name__ == '__main__':
     tor = torrent(sys.argv[1])
     peer_list = [['62.210.209.146', 51413], ['185.44.107.109', 51413], ['77.13.17.35', 51413], ['185.203.56.6', 61005], ['82.56.184.243', 51413], ['110.175.89.172', 6904], ['89.178.161.105', 51413], ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21', 51413]]
     tor.get_peers(10, peer_list = peer_list)
-    tor.peers[0].handshake(tor)
+    tor.peers[0].socket = socket(AF_INET, SOCK_STREAM)
+    tor.peers[0].socket.connect((self.ip, self.connection_port))
+
