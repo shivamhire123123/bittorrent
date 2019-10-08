@@ -28,3 +28,26 @@ functions of each thread :-
 	tracker thread - what will happen to connection which are connected when the thread is not in .accept() function? will the connection gets rejected
 		handle updating various data from trackers
 		accept connection of peers on socket and pass it to main thread
+
+whether single thread for each peer?
+send handshake
+recv handshake
+see for hashinfo if match cont else drop connection
+send bitfield message
+recv bitfield message if not recv send unchoke and interested and recv again still not recv make some random request and recv still not recv drop connection
+recv unchoke message
+unpack bitfield request the rearest say 10 pieces(if less pieces available ask less) or if some pieces are in download ask them first
+recv if no bits recv again send the request and recv again no response drop
+
+when two thread handle each peer
+main thread create two thread for peer first receiving second sending
+sender send handshake(and set handshake requested) and wait for reciever to confirm it have receive handshake or it has decided to drop if drop return to main thread or see if receiver has requested to resend the handshake
+reciver receive handshake(when sender has send the handshake) and see if communication should continue or if it doesnt receive handshake in time request sender to resend the handshake)
+sender sends bitfield, unchoke and wait for receiver to get bitfields
+reciever receives bitfields or request sender to send bitfields
+if receiver receives bitfields do the rarest thing and see if it wants piece which the peer have and ask sender to send interested
+receiver waits for unchoke and/or interested if not receive ask sender to resend interested if still not receive close threads and submit it to main thread
+receiver request sender to send request of rarest pieces
+sender sends request
+receiver wait for receiving pieces
+

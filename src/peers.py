@@ -38,8 +38,6 @@ class peers:
         self.pstr = struct.pack("!" + str(len(self.pstr)) + "s", self.pstr.encode())
         self.reserved = struct.pack("!Q", 0)
         self.info_hash = b''
-        print(torrent.info_hash.digest())
-        print(torrent.peer_id)
         for i in torrent.info_hash.digest():
             self.info_hash += struct.pack("!B", i)
         self.peer_id = b''
