@@ -5,6 +5,7 @@ import struct
 from socket import *
 from torrent_logger import *
 import threading
+import queue
 
 def filter_tracker(tracker, protocol):
     ''' This function takes a list of strings contaning url to different trackers
@@ -29,8 +30,8 @@ class peers:
         self.am_interested = 0
         self.peer_chocking = 1
         self.peer_interested = 0
-		# Lock for updating peer state
-		self.state_lock = threading.Lock()
+        # Lock for updating peer state
+        self.state_lock = threading.Lock()
 
         # Use to communicate to peer
         self.ip = ip
@@ -43,9 +44,9 @@ class peers:
         self.quit = 0
         self.quit_lock = threading.Lock()
 
-		# bitfield set having those numbers which the peer have
-		self.bitfield = {}
-		self.bitfield_lock = threading.Lock()
+        # bitfield set having those numbers which the peer have
+        self.bitfield = {}
+        self.bitfield_lock = threading.Lock()
 
     def locked_socket_send(self, data):
         with self.socket_lock:
@@ -82,27 +83,39 @@ class peers:
     def recv_garbage(self, response):
         pass
 
-	def recv_choke(self, response):
-		with self.state_lock:
-			self.peer_chocking = 1	
-		with self.quit_lock:
-			self.quit = 1
+    def recv_choke(self, response):
+        with self.state_lock:
+            self.peer_chocking = 1
+        with self.quit_lock:
+            self.quit = 1
 
-	def recv_unchoke(self, response):
-		with self.state_lock:
-			self.choke = 0
-		
-	def recv_interested(self, response):
-		with self.state_lock:
-			self.interested = 1
+    def recv_unchoke(self, response):
+        with self.state_lock:
+            self.choke = 0
 
-	def recv_have(self, response):
-		piece_index = struct.unpack("!I", response[0])
-		with self.bitfield_lock:
-			self.bitfield.insert(piece_index)
+    def recv_interested(self, response):
+        with self.state_lock:
+            self.interested = 1
 
-	def recv_bitfield(self, response):
-		for i in range(len(response
+    def recv_not_interested(self, response):
+        with self.state_lock:
+            self.interested = 0
+
+    def recv_have(self, response):
+        piece_index = struct.unpack("!I", response[0])
+        with self.bitfield_lock:
+            self.bitfield.insert(piece_index)
+
+    def recv_bitfield(self, response):
+        for i in range(len(response)):
+            bit_pos = 0
+            for j in range(8):
+                if (response[i] >> j) & 1:
+                    self.bitfield.append(i * 8 + j)
+        # TODO update torrents frequency
+
+    def recv_request(self, response):
+        
 
     def receiver(self, quit_after_one_iteration = None):
         self.quit_lock.acquire()
@@ -120,22 +133,22 @@ class peers:
                 else:
                     # Receive ID and remaning bytes
                     response = locked_socket_recv(length)
-                    fun = {
+                    {
                             0 : self.recv_choke,
                             1 : self.recv_unchoke,
                             2 : self.recv_interested,
-                            3 : self.not_interested,
+                            3 : self.recv_not_interested,
                             4 : self.recv_have,
                             5 : self.recv_bitfield,
-                            6 : self.request,
+                            6 : self.recv_request,
                             7 : self.recv_piece,
                             8 : self.recv_cancel,
                             9 : self.recv_port
                      }.get(int.from_bytes(response[0], byteorder='little'),
                              self.recv_garbage)(response[1:])
             self.quit_lock.acquire()
-			if(quit_after_one_iteration != None):
-				break
+            if(quit_after_one_iteration != None):
+                break
         self.quit_lock.release()
 
 if __name__ == '__main__':
