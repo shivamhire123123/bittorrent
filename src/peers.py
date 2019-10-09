@@ -23,20 +23,29 @@ class peers:
         self.upload_speed = None
         # Download speed
         self.download_speed = None
+
         # 4 state variable for peers
         self.am_chocking = 1
         self.am_interested = 0
         self.peer_chocking = 1
         self.peer_interested = 0
+		# Lock for updating peer state
+		self.state_lock = threading.Lock()
+
         # Use to communicate to peer
         self.ip = ip
         self.connection_port = port
         self.socket = None
         self.socket_lock = threading.Lock()
+
         # This variable is set by main_peer_thread, receiver_thread or sender_thread
         # to notify other thread to shutdown
         self.quit = 0
-        self.lock_quit = threading.Lock()
+        self.quit_lock = threading.Lock()
+
+		# bitfield set having those numbers which the peer have
+		self.bitfield = {}
+		self.bitfield_lock = threading.Lock()
 
     def locked_socket_send(self, data):
         with self.socket_lock:
@@ -70,16 +79,39 @@ class peers:
         peers_logger.debug("Sending " + str(handshake) + " to " + self.ip)
         locked_socket_send(handshake)
 
-    def recv_garbage(self):
+    def recv_garbage(self, response):
         pass
-    def receiver(self):
-        self.lock_quit.acquire()
+
+	def recv_choke(self, response):
+		with self.state_lock:
+			self.peer_chocking = 1	
+		with self.quit_lock:
+			self.quit = 1
+
+	def recv_unchoke(self, response):
+		with self.state_lock:
+			self.choke = 0
+		
+	def recv_interested(self, response):
+		with self.state_lock:
+			self.interested = 1
+
+	def recv_have(self, response):
+		piece_index = struct.unpack("!I", response[0])
+		with self.bitfield_lock:
+			self.bitfield.insert(piece_index)
+
+	def recv_bitfield(self, response):
+		for i in range(len(response
+
+    def receiver(self, quit_after_one_iteration = None):
+        self.quit_lock.acquire()
         while(self.quit != 1):
-            self.lock_quit.release()
+            self.quit_lock.release()
             response = locked_socket_recv(4)
             peers_logger.debug("Received " + str(response) + " from " + self.ip)
             # Check if response have handshake(1st byte is 19) or other messages
-            if response[0] == b'\x13' && response[1:] == b'Bit':
+            if response[0] == b'\x13' and response[1:] == b'Bit':
                 recv_handshake()
             else:
                 length = struct.unpack("!I", response)
@@ -100,9 +132,11 @@ class peers:
                             8 : self.recv_cancel,
                             9 : self.recv_port
                      }.get(int.from_bytes(response[0], byteorder='little'),
-                             self.recv_garbage)()
-            self.lock_quit.acquire()
-        self.lock_quit.release()
+                             self.recv_garbage)(response[1:])
+            self.quit_lock.acquire()
+			if(quit_after_one_iteration != None):
+				break
+        self.quit_lock.release()
 
 if __name__ == '__main__':
     ubuntu = torrent_file.torrent_file(sys.argv[1])
