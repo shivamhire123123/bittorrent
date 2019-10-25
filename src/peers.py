@@ -19,7 +19,12 @@ def filter_tracker(tracker, protocol):
     return filter_trackers
 
 class peers:
-    def __init__(self, ip, port):
+    # TODO make an interface of peer class to handle socket
+    # It should handle case when we want to create socket and connect to peer
+    # and when peer connected to us
+    # it should also check if the socket is already created
+    # it should also have the functionality of closing down the socket
+    def __init__(self, ip, port, torrent):
         # Upload speed of peer averaged so far
         self.upload_speed = None
         # Download speed
@@ -38,19 +43,30 @@ class peers:
         self.connection_port = port
         self.socket = None
         self.socket_lock = threading.Lock()
+        # This socket object will be made by main_peer thread since it will be
+        # point less to create it here, it will just use up number of sockets
+        # available with OS without doing some actual use of them
 
         # This variable is set by main_peer_thread, receiver_thread or sender_thread
         # to notify other thread to shutdown
         self.quit = 0
         self.quit_lock = threading.Lock()
 
-        # bitfield set having those numbers which the peer have
+        # bitfield set having those piece numbers which the peer have, starts from 0
         self.bitfield = {}
         self.bitfield_lock = threading.Lock()
 
+        # Queue to send data from receiver to sender
+        self.request = queue.Queue()
+
+        # Torrent which this peer is serving to
+        self.torrent = torrent
+
     def locked_socket_send(self, data):
+        l = 0
         with self.socket_lock:
-            return self.socket.send(data)
+            while(l < len(data)):
+                l += self.socket.send(data[l:])
 
     def locked_socket_recv(self, length):
         response = b''
@@ -59,16 +75,19 @@ class peers:
                 response += self.socket.recv(length - len(response))
         return response
 
-    def handshake(self, torrent):
+    def handshake(self):
+        '''
+        Will send a handshake message to the peer
+        '''
         self.pstr = "BitTorrent protocol"
         self.pstrlen = struct.pack("!B", len(self.pstr))
         self.pstr = struct.pack("!" + str(len(self.pstr)) + "s", self.pstr.encode())
         self.reserved = struct.pack("!Q", 0)
         self.info_hash = b''
-        for i in torrent.info_hash.digest():
+        for i in self.torrent.info_hash.digest():
             self.info_hash += struct.pack("!B", i)
         self.peer_id = b''
-        for i in torrent.peer_id:
+        for i in self.torrent.peer_id:
             self.peer_id += struct.pack("!B", i)
 
         peers_logger.debug("pstrlen - " + str(self.pstrlen))
@@ -78,9 +97,10 @@ class peers:
         peers_logger.debug("length of info_hash and peer_id is " + str(len(self.info_hash)) + " and " + str(len(self.peer_id)))
         handshake = self.pstrlen + self.pstr + self.reserved + self.info_hash + self.peer_id
         peers_logger.debug("Sending " + str(handshake) + " to " + self.ip)
-        locked_socket_send(handshake)
+        self.locked_socket_send(handshake)
 
     def recv_garbage(self, response):
+        peers_logger("Received garbage from " + self.ip)
         pass
 
     def recv_choke(self, response):
@@ -105,34 +125,59 @@ class peers:
         piece_index = struct.unpack("!I", response[0])
         with self.bitfield_lock:
             self.bitfield.insert(piece_index)
+        with self.torrent.lock:
+            self.torrent.piece_freq[piece_index] += 1
 
     def recv_bitfield(self, response):
+        peers_logger.debug("Received bitfield")
         for i in range(len(response)):
             bit_pos = 0
             for j in range(8):
                 if (response[i] >> j) & 1:
-                    self.bitfield.append(i * 8 + j)
-        # TODO update torrents frequency
+                    piece_number = i * 8 + j
+                    self.bitfield.append(piece_number)
+                    with self.torrent.lock:
+                        self.torrent.piece_freq[piece_number] += 1
 
     def recv_request(self, response):
-        
+        piece_id, begin, length = struct.unpack("!III", response)
+        piece_logger("Received request from " + self.ip + " of " + str(piece_id)
+                        + str(begin) + str(length))
+        self.request.put((6, piece_id, begin, length))
+
+    def recv_piece(self, response):
+        piece_logger("Received piece :- " + str(response))
+        piece_logger("Receive piece not fully implemented")
+        self.request.put((7))
+        # TODO handle recv_piece
+
+    def recv_cancel(self, response):
+        piece_logger("Received cancel from " + self.ip)
+        piece_id, begin, length = struct.unpack("!III", response)
+        self.request.put((8, piece_id, begin, length))
+        # TODO implement cancel fully -> do it after implementing main_peer thread
+
+    def recv_port(self, response):
+        piece_logger("port message received from " + self.ip + " which is not supported")
 
     def receiver(self, quit_after_one_iteration = None):
         self.quit_lock.acquire()
         while(self.quit != 1):
             self.quit_lock.release()
-            response = locked_socket_recv(4)
+            response = self.locked_socket_recv(4)
             peers_logger.debug("Received " + str(response) + " from " + self.ip)
             # Check if response have handshake(1st byte is 19) or other messages
             if response[0] == b'\x13' and response[1:] == b'Bit':
-                recv_handshake()
+                self.handshake()
+                quit_after_one_iteration = 1
+                # TODO handle the case when some other peer will start the communication
             else:
                 length = struct.unpack("!I", response)
                 if length == 0:
                     self.recv_keep_alive()
                 else:
                     # Receive ID and remaning bytes
-                    response = locked_socket_recv(length)
+                    response = self.locked_socket_recv(length)
                     {
                             0 : self.recv_choke,
                             1 : self.recv_unchoke,
@@ -150,6 +195,18 @@ class peers:
             if(quit_after_one_iteration != None):
                 break
         self.quit_lock.release()
+
+    def sender(self):
+        '''
+        TODO
+        implement rarest first algorithm
+        receive inputs from receiver
+        check quit bit
+        keep atleast x request in pipeline
+        '''
+
+
+
 
 if __name__ == '__main__':
     ubuntu = torrent_file.torrent_file(sys.argv[1])

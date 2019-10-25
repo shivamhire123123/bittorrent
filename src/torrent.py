@@ -26,8 +26,8 @@ class torrent:
         self.uploaded = 0
         self.downloaded = 0
         self.left = 0
-
-        # Making lock for uploaded, downloaded and left
+        self.piece_freq = None
+        # Making lock for piece_freq, uploaded, downloaded and left
         self.lock = threading.Lock()
 
         # Creating peer id
@@ -53,7 +53,7 @@ class torrent:
             self.piece_len = torrent_file_extract.piece_len
             self.name = torrent_file_extract.name
             self.length = torrent_file_extract.length
-            self.number_of_pieces = self.length / self.piece_len
+            self.number_of_pieces = int(self.length / self.piece_len)
             self.trackers_list = torrent_file_extract.tracker
             self.left = self.length
         else:
@@ -69,6 +69,11 @@ class torrent:
         # If .part file is not present create it
         if (torrent_file_path != None):
             torrent_logger.error(".part file code not implemented")
+
+        self.lock.acquire()
+        self.piece_freq = [0] * self.number_of_pieces
+        self.lock.release()
+
 
     def get_peers(self, num_of_peers = 20, peer_list = None):
         if peer_list == None:
@@ -87,12 +92,17 @@ class torrent:
             self.peer_list = peer_list
         self.peers = []
         for peer in self.peer_list:
-            self.peers.append(peers.peers(peer[0], peer[1]))
+            self.peers.append(peers.peers(peer[0], peer[1], self))
 
 if __name__ == '__main__':
     tor = torrent(sys.argv[1])
-    peer_list = [['62.210.209.146', 51413], ['185.44.107.109', 51413], ['77.13.17.35', 51413], ['185.203.56.6', 61005], ['82.56.184.243', 51413], ['110.175.89.172', 6904], ['89.178.161.105', 51413], ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21', 51413]]
+    peer_list = [['62.210.209.146', 51413], ['185.44.107.109', 51413],
+            ['77.13.17.35', 51413], ['185.203.56.6', 61005], ['82.56.184.243',
+                51413], ['110.175.89.172', 6904], ['89.178.161.105', 51413],
+            ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21'
+                , 51413]]
     tor.get_peers(10, peer_list = peer_list)
-    tor.peers[0].socket = socket(AF_INET, SOCK_STREAM)
-    tor.peers[0].socket.connect((self.ip, self.connection_port))
-
+    tor.peers[1].socket = socket(AF_INET, SOCK_STREAM)
+    tor.peers[1].socket.connect((peer_list[1][0], peer_list[1][1]))
+    tor.peers[1].handshake()
+    tor.peers[1].receiver()

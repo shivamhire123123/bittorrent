@@ -25,3 +25,5 @@ request message -
 ######################COMMANDS###################################
 await - maybe just pause execution
 			  if followed by some function give control to it
+socket.bind(('', 0)) - to auto bind to available port
+socket.getportname() - returns ip and port
