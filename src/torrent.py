@@ -3,7 +3,6 @@ import torrent_file
 from socket import *
 import hashlib
 import threading
-import thread
 import bencodepy
 import part_file
 import sys
@@ -151,4 +150,9 @@ if __name__ == '__main__':
     tor.peers[1].socket = socket(AF_INET, SOCK_STREAM)
     tor.peers[1].socket.connect((peer_list[1][0], peer_list[1][1]))
     tor.peers[1].handshake()
-    tor.peers[1].receiver()
+    peer1_receiver = threading.Thread(None, tor.peers[1].receiver)
+    peer1_sender = threading.Thread(None, tor.peers[1].sender)
+    peer1_receiver.start()
+    peer1_sender.start()
+    peer1_receiver.join()
+    peer1_sender.join()

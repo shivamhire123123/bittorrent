@@ -6,6 +6,8 @@ from socket import *
 from torrent_logger import *
 import threading
 import queue
+import select
+import time
 
 def filter_tracker(tracker, protocol):
     ''' This function takes a list of strings contaning url to different trackers
@@ -36,7 +38,7 @@ class peers:
         # To see if handshake has taken place with this peer
         # This will be either set by main_peer before starting sender and receiver thread
         # or will be set by sender thread on the command of receiver
-        self.handshake = 0
+        self.handshake_done = 0
 
         # 4 state variable for peers
         self.am_chocking = 1
@@ -75,8 +77,10 @@ class peers:
         # This is a list of offset of requested pieces and will be used by
         # sender only
         self.requested_pieces = [0] * self.torrent.number_of_pieces
+        self.num_requested_pieces = 0
 
     def locked_socket_send(self, data):
+        peers_logger.debug("Sending : " + str(data) + " to " + str(self.ip))
         l = 0
         with self.socket_lock:
             while(l < len(data)):
@@ -87,13 +91,14 @@ class peers:
         with self.socket_lock:
             while len(response) != length:
                 response += self.socket.recv(length - len(response))
+        peers_logger.debug("Received : " + str(response) + " from " + str(self.ip))
         return response
 
     def handshake(self):
         '''
-        Will send a handshake message to the peer only if self.handshake is 0
+        Will send a handshake message to the peer only if self.handshake_done is 0
         '''
-        if self.handshake == 1:
+        if self.handshake_done == 1:
             return
         self.pstr = "BitTorrent protocol"
         self.pstrlen = struct.pack("!B", len(self.pstr))
@@ -112,9 +117,9 @@ class peers:
         peers_logger.debug("peer_id - " + str(self.peer_id))
         peers_logger.debug("length of info_hash and peer_id is " + str(len(self.info_hash)) + " and " + str(len(self.peer_id)))
         handshake = self.pstrlen + self.pstr + self.reserved + self.info_hash + self.peer_id
-        peers_logger.debug("Sending " + str(handshake) + " to " + self.ip)
+        peers_logger.debug("Sending handshake:")
         self.locked_socket_send(handshake)
-        self.handshake = 1
+        self.handshake_done = 1
 
     def recv_garbage(self, response):
         peers_logger.debug("Received garbage from " + self.ip)
@@ -129,10 +134,12 @@ class peers:
 
     def recv_unchoke(self, response):
         peers_logger.debug("Received unchoke form " + self.ip)
-        with self.state_lock:
-            self.choke = 0
+        with self.state_cond_lock:
+            self.peer_chocking = 0
             # Awakens the sender thread
+            peers_logger.debug("Notifying the sender")
             self.state_cond_lock.notify()
+        peers_logger.debug("Successfully notified the sender")
 
     def recv_interested(self, response):
         peers_logger.debug("Received interested form " + self.ip)
@@ -145,7 +152,7 @@ class peers:
             self.interested = 0
 
     def recv_have(self, response):
-        peers_logger.debug("Received have form " + self.ip)
+        peers_logger.debug("Received have from " + self.ip)
         piece_index = struct.unpack("!I", response[0])[0]
         with self.bitfield_lock:
             self.bitfield.insert(piece_index)
@@ -171,27 +178,27 @@ class peers:
     def recv_request(self, response):
         temp = struct.unpack("!III", response)
         piece_id, begin, length = temp[0], temp[1], temp[2]
-        piece_logger.debug("Received request from " + self.ip + " of " + str(piece_id)
+        peers_logger.debug("Received request from " + self.ip + " of " + str(piece_id)
                         + str(begin) + str(length))
         self.request.put((6, piece_id, begin, length))
 
     # even if this function is name recv_piece it is intended to receive a piece
     def recv_piece(self, response):
-        piece_logger.debug("Received piece :- " + str(response) + " from " \
-                + self.ip)
-        piece_logger.debug("Receive piece not fully implemented")
+        peers_logger.debug("Received piece from " + self.ip + " of length " +\
+                str(len(response)))
+        peers_logger.debug("Receive piece not fully implemented")
         self.request.put((7))
         self.torrent.recv_piece(response)
 
     def recv_cancel(self, response):
-        piece_logger.debug("Received cancel from " + self.ip)
+        peers_logger.debug("Received cancel from " + self.ip)
         temp = struct.unpack("!III", response)
         piece_id, begin, length = temp[0], temp[1], temp[2]
         self.request.put((8, piece_id, begin, length))
         # TODO implement cancel fully -> do it after implementing main_peer thread
 
     def recv_port(self, response):
-        piece_logger.debug("port message received from " + self.ip + " which is not supported")
+        peers_logger.debug("port message received from " + self.ip + " which is not supported")
 
     # use quit_after_one_iteration as an updating mech
     # this can be use in handshake, have
@@ -199,13 +206,12 @@ class peers:
         self.quit_lock.acquire()
         while(self.quit != 1):
             self.quit_lock.release()
+            reader, writer, error = select.select([self.socket], [], [])
             response = self.locked_socket_recv(4)
-            peers_logger.debug("Received " + str(response) + " from " + self.ip)
             # Check if response have handshake(1st byte is 19) or other messages
             if response[0] == 19 and response[1:] == b'Bit':
                 peers_logger.debug("Received handshake, other functionality not implemented")
                 response = self.locked_socket_recv(64)
-                peers_logger.debug("Received " + str(response) + " from " + self.ip)
                 # request sender to send handshake
                 self.request.put((19))
                 # self.handshake()
@@ -248,26 +254,53 @@ class peers:
         block is last
         It returns if more blocks of same piece can be requested or not
         '''
-        length = sturct.pack("!I", 13)
-        identify = struct.pack("!B", 6)
-        index = struct.pack("!I", piece_index)
-        begin = struct.pack("!I", self.requested_pieces[piece_index])
-        remaning = self.torrent.piece_len - self.requested_pieces[piece_index]
-        max_request_len = 16 * 2 ** 10
-        # if remaning is more than max_request_len request block for max
-        if remaning > max_request_len:
-            requested_length = max_request_len
-        # else remaning
-        else:
-            requested_length = remaning
-        block_length = struct.pack("!I", requested_length)
-        self.requested_pieces[piece_index] += requested_length
-        packet = length + identify + index + begin + block_length
-        self.locked_socket_send(packet)
         if self.requested_pieces[piece_index] > self.torrent.piece_len:
             return 0
         else:
+            length = struct.pack("!I", 13)
+            identify = struct.pack("!B", 6)
+            index = struct.pack("!I", piece_index)
+            begin = struct.pack("!I", self.requested_pieces[piece_index])
+            remaning = self.torrent.piece_len - self.requested_pieces[piece_index]
+            max_request_len = 16 * 2 ** 10
+            # if remaning is more than max_request_len request block for max
+            if remaning > max_request_len:
+                requested_length = max_request_len
+            # else remaning
+            else:
+                requested_length = remaning
+            block_length = struct.pack("!I", requested_length)
+            peers_logger.debug("Sending piece request:")
+            peers_logger.debug("Piece - " + str(piece_index))
+            peers_logger.debug("Begin - " + str(self.requested_pieces[piece_index]))
+            peers_logger.debug("Block length - " + str(requested_length))
+            self.requested_pieces[piece_index] += requested_length
+            packet = length + identify + index + begin + block_length
+            self.locked_socket_send(packet)
+            self.num_requested_pieces += 1
             return 1
+
+    def send_unchock(self):
+        self.state_lock.acquire()
+        if self.am_chocking == 1:
+            length = struct.pack("!I", 1)
+            identify = struct.pack("!B", 1)
+            packet = length + identify
+            peers_logger.debug("Sending unchock")
+            self.locked_socket_send(packet)
+            self.am_chocking = 0
+        self.state_lock.release()
+
+    def send_interested(self):
+        self.state_lock.acquire()
+        if self.am_interested == 0:
+            length = struct.pack("!I", 1)
+            identify = struct.pack("!B", 2)
+            packet = length + identify
+            peers_logger.debug("Sending interested")
+            self.locked_socket_send(packet)
+            self.am_interested = 1
+        self.state_lock.release()
 
     # implement rarest first algorithm(the piece which is rarest and which I do
     # not have and which is not already
@@ -280,13 +313,13 @@ class peers:
     # another way would be to keep track of piece in request(i.e. piece for whic
     # request for starting block is already sent)
     def request_rarest_first(self, num_request):
-        requestable = self.torrent.requestable_pieces & self.bitfield
+        requestable_pieces = self.torrent.requestable_pieces & self.bitfield
         rare_freq = 0
         rare = []
         request_made = 0
         requestable = 1
         while request_made < num_request:
-            rare = self.torrent.rarest(requestable, rare_freq)
+            rare = self.torrent.rarest(requestable_pieces, rare_freq)
             if len(rare) == 0:
                 return request_made
             for i in rare:
@@ -295,7 +328,7 @@ class peers:
                     request_made += 1
             self.torrent.lock.acquire()
             rare_freq = self.torrent.piece_freq[rare[0]]
-            self.torrent.release()
+            self.torrent.lock.release()
 
     def sender(self):
         '''
@@ -316,6 +349,7 @@ class peers:
             implement this using the timer object of threading
         dont send pieces unless interested is received
         '''
+        peers_logger.debug("Inside sender")
         self.quit_lock.acquire()
         while(self.quit != 1):
             self.quit_lock.release()
@@ -324,19 +358,13 @@ class peers:
             # or bitfield
             # this messages do not require the client to be in unchock stage
 
-            self.state_lock.acquire()
             # TODO for now sending interested immediately later send interested
             # only after knowing that the peer have something to give to us
             # send interested message
-            if self.am_interested == 0:
-                self.send_interested()
-                self.am_interested = 1
+            self.send_interested()
 
             # Send unchock
-            if self.am_chocking == 1:
-                self.send_unchock()
-                self.am_chocking = 0
-            self.state_lock.release()
+            self.send_unchock()
 
             # TODO this is very bad design since if this peer has chocked us
             # then we will wait in this loop for infinite time even if the quit
@@ -347,10 +375,12 @@ class peers:
             with self.state_cond_lock:
                 while not self.peer_chocking == 0:
                     self.state_cond_lock.wait()
+                peers_logger.debug("Sender - chock released")
                 # if an unchoke is received then we must start requesting block
                 # again since even if we had previously requested blocks it will
                 # be discarded
-                self.request_rarest_first(4) # send how many request are need to be send as argument and it is not necessary that it will send that many request, will return false or 0 if no request can be made TODO in such case(it may be optimistic unchock) dont disconnect main_peer will call to quit if no piece is receive after long time
+                if self.num_requested_pieces < 4:
+                    self.request_rarest_first(4 - self.num_requested_pieces) # send how many request are need to be send as argument and it is not necessary that it will send that many request, will return false or 0 if no request can be made TODO in such case(it may be optimistic unchock) dont disconnect main_peer will call to quit if no piece is receive after long time
 
             # check if there is any request from receiver
             # send peer blocks which are present in peer_request
@@ -359,8 +389,10 @@ class peers:
 
 
 
+            time.sleep(1)
             self.quit_lock.acquire()
         self.quit_lock.release()
+        peers_logger("Exiting from sender")
 
 
 
