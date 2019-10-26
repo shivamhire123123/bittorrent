@@ -61,3 +61,35 @@ sender
             discarded by the peer and we have to start from new
         keep atleast x request in pipeline
             need to implement my_bitfield(reading from already downloaded file)
+		implement the request queue between sender and receiver as a priority queue
+			since it may happen that first a request is enqueue and then a chock
+			is enqueue in such a case chock must be read first
+
+
+----------------
+what does rarest first algorithm means?
+is it that we have to talk to each peer find what pieces do they have and find
+rarest among them(ofcourse we have to randomly choose among rare(even if this algo is called rarest) pieces)
+or
+is it that we connect to peers according to some mechanism we have device and ask
+the piece which we think(i.e. it is rare in local sense(local means wrt peers we are connected)) is the rarest
+I think both of this are two extreme ends
+our solution lies somewhere in between
+randomly choose any 10 peers ask them for there bitfields calculate the rarest
+and which peers have this rarest pieces(for this we need to keep track of which
+peer have which piece according to piece(i.e. if we know the piece we should be
+able to find out who all peers have them)) connect to them and ask the piece
+now the bad part is we need to have the rarest finding code in both in peer and
+in torrent class
+one solution is to keep it only in torrent
+now there is one more problem i.e we need to keep track of rechable pieces in torrent class
+
+---------------------
+priority levels of messages
+choke, unchock, cancel
+interested, not interested
+have
+bitfield
+request
+piece
+keep-alive

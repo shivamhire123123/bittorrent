@@ -124,8 +124,8 @@ class torrent:
         # TODO handle recv_piece
         # TODO tell all peer sender to send a have message
         # TODO handle half downladed case
-        piece_index = struct.unpack("!I", response[:4])
-        begin = struct.unpack("!I", response[4:8])
+        piece_index = struct.unpack("!I", response[:4])[0]
+        begin = struct.unpack("!I", response[4:8])[0]
         block_length = len(response[8:])
         if piece_index in self.part_pieces:
             if begin == self.part_pieces[piece_index][0]:
@@ -134,7 +134,7 @@ class torrent:
                 # TODO if length of piece in cache becomes equal to piece_len
                 # check for hash and store it in file
                 if self.part_pieces[piece_index][0] == self.piece_len:
-                    torrent_logger.info("Piece " + piece_index + " downloaded\
+                    torrent_logger.info("Piece " + str(piece_index) + " downloaded\
                             successfully")
                     self.lock.acquire()
                     self.my_bitfield.add(piece_index)
@@ -176,11 +176,12 @@ if __name__ == '__main__':
             ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21'
                 , 51413]]
     tor.get_peers(10, peer_list = peer_list)
-    tor.peers[1].socket = socket(AF_INET, SOCK_STREAM)
-    tor.peers[1].socket.connect((peer_list[1][0], peer_list[1][1]))
-    tor.peers[1].handshake()
-    peer1_receiver = threading.Thread(None, tor.peers[1].receiver)
-    peer1_sender = threading.Thread(None, tor.peers[1].sender)
+    peer_index = 3
+    tor.peers[peer_index].socket = socket(AF_INET, SOCK_STREAM)
+    tor.peers[peer_index].socket.connect((peer_list[peer_index][0], peer_list[peer_index][1]))
+    tor.peers[peer_index].handshake()
+    peer1_receiver = threading.Thread(None, tor.peers[peer_index].receiver)
+    peer1_sender = threading.Thread(None, tor.peers[peer_index].sender)
     peer1_receiver.start()
     peer1_sender.start()
     peer1_receiver.join()

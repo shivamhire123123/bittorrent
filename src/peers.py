@@ -131,6 +131,10 @@ class peers:
         peers_logger.debug("Received garbage from " + self.ip)
         pass
 
+    # TODO implement this
+    def recv_keep_alive(self):
+        pass
+
     def recv_choke(self, response):
         peers_logger.debug("Received choke form " + self.ip)
         with self.state_lock:
