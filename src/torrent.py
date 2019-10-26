@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 import tracker
 import peers
+import struct
 
 class torrent:
     def __init__(self, torrent_file_path = None, part_file_path = None):
@@ -92,6 +93,10 @@ class torrent:
                 self.requestable_pieces.add(i)
         self.lock.release()
 
+        # A cache to store partially downloaded pieces, this will be access by
+        # main peer only
+        self.part_pieces = dict()
+
 
     def get_peers(self, num_of_peers = 20, peer_list = None):
         if peer_list == None:
@@ -113,15 +118,39 @@ class torrent:
             self.peers.append(peers.peers(peer[0], peer[1], self))
 
 
-    # even if this function is name recv_piece it is intended to receive a piece
+    # even if this function is name recv_piece it is intended to receive a block
     # this function will be called by receivers of peers
     def recv_piece(self, response):
         # TODO handle recv_piece
-        # TODO update my_bitfield
         # TODO tell all peer sender to send a have message
-        # TODO update downloaded_offset ignore if that block with in a piece
-        # is already downloaded, append half downloaded block etc
-        return NotImplemented
+        # TODO handle half downladed case
+        piece_index = struct.unpack("!I", response[:4])
+        begin = struct.unpack("!I", response[4:8])
+        block_length = len(response[8:])
+        if piece_index in self.part_pieces:
+            if begin == self.part_pieces[piece_index][0]:
+                self.part_pieces[piece_index][1] += response[8:]
+                self.part_pieces[piece_index][0] += block_length
+                # TODO if length of piece in cache becomes equal to piece_len
+                # check for hash and store it in file
+                if self.part_pieces[piece_index][0] == self.piece_len:
+                    torrent_logger.info("Piece " + piece_index + " downloaded\
+                            successfully")
+                    self.lock.acquire()
+                    self.my_bitfield.add(piece_index)
+                    self.lock.release()
+                # updating downloaded_offset
+                self.lock.acquire()
+                if self.downloaded_piece_offset[piece_index] == begin:
+                    self.downloaded_piece_offset += block_length
+                self.lock.release()
+            else:
+                torrent_logger.error("non continuous block received for piece "\
+                        + str(piece_index) + " block is being discarded")
+                torrent_logger.error("Expected was " + str(self.part_pieces[piece_index][0])\
+                        + " but received " + str(begin))
+        else:
+            self.part_pieces[piece_index] = [len(response[8:]), response[8:]]
 
     # This will see the freq of each piece in the swarn and return the list of
     # piece which are rarest
