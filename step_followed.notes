@@ -51,3 +51,13 @@ receiver request sender to send request of rarest pieces
 sender sends request
 receiver wait for receiving pieces
 
+
+sender
+        check quit bit
+        send interested
+        send unchock
+        check chock
+            whenever a chock is receive all request of block by this client is
+            discarded by the peer and we have to start from new
+        keep atleast x request in pipeline
+            need to implement my_bitfield(reading from already downloaded file)

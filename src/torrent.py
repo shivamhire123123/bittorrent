@@ -3,6 +3,7 @@ import torrent_file
 from socket import *
 import hashlib
 import threading
+import thread
 import bencodepy
 import part_file
 import sys
@@ -27,7 +28,16 @@ class torrent:
         self.downloaded = 0
         self.left = 0
         self.piece_freq = None
-        # Making lock for piece_freq, uploaded, downloaded and left
+        self.my_bitfield = set([])
+        # This list will store the count of number of request in pipeline for
+        # corresponding piece
+        self.requested_pieces = None
+        # This array will store offset of pieces below which blocks are already
+        # downloaded
+        self.downloaded_piece_offset = None
+        # This denotes piece which this client do not have
+        self.requestable_pieces = set([])
+        # Making lock for my_bitfield, piece_freq, uploaded, downloaded and left
         self.lock = threading.Lock()
 
         # Creating peer id
@@ -44,7 +54,7 @@ class torrent:
         # If there is already downloaded file read information from it
         if (part_file_path != None and torrent_file_path == None):
             torrent_logger.debug("Reading torrent info from part file " + part_file_path)
-            # This function should initialize torrent variables
+            # This function should initialize all torrent variables
             part_file(file_path = part_file_path, torrent = self)
         elif (torrent_file_path != None and part_file_path == None):
             # Initialise using extract from .torrent file
@@ -56,6 +66,11 @@ class torrent:
             self.number_of_pieces = int(self.length / self.piece_len)
             self.trackers_list = torrent_file_extract.tracker
             self.left = self.length
+            # Initialize all downloaded offset to zero since this is a new torrent
+            # download
+            self.lock.acquire()
+            self.downloaded_piece_offset = [0] * self.number_of_pieces
+            self.lock.release()
         else:
             torrent_logger.error("Either of .part or .torrent file must be passed")
 
@@ -72,6 +87,10 @@ class torrent:
 
         self.lock.acquire()
         self.piece_freq = [0] * self.number_of_pieces
+        self.requested_pieces = [0] * self.number_of_pieces
+        for i in range(self.number_of_pieces):
+            if i not in self.my_bitfield:
+                self.requestable_pieces.add(i)
         self.lock.release()
 
 
@@ -93,6 +112,33 @@ class torrent:
         self.peers = []
         for peer in self.peer_list:
             self.peers.append(peers.peers(peer[0], peer[1], self))
+
+
+    # even if this function is name recv_piece it is intended to receive a piece
+    # this function will be called by receivers of peers
+    def recv_piece(self, response):
+        # TODO handle recv_piece
+        # TODO update my_bitfield
+        # TODO tell all peer sender to send a have message
+        # TODO update downloaded_offset ignore if that block with in a piece
+        # is already downloaded, append half downloaded block etc
+        return NotImplemented
+
+    # This will see the freq of each piece in the swarn and return the list of
+    # piece which are rarest
+    def rarest(self, requestable, greater_than):
+        '''
+        This function returns a list of pieces from requestable which have minimum
+        frequencey which itself is more than greater_than
+        '''
+        rare = []
+        rare_freq = min(self.piece_freq[i] for i in requestable \
+                if self.piece_freq[i] > greater_than)
+        for piece in requestable:
+            if self.piece_freq[piece] == rare_freq:
+                rare.append(piece)
+
+        return rare
 
 if __name__ == '__main__':
     tor = torrent(sys.argv[1])
