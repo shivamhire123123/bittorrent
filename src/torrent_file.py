@@ -2,13 +2,16 @@ from bencodepy import decode_from_file
 from torrent_logger import *
 import sys
 class torrent_file:
-    def __init__(self, torrent_file):
+    def __init__(self, torrent_file, file_extract = None):
         '''
         Initialise various variables for a torrent.
         torrent_file must be path to .torrent file
         Currently this handles only single file case.
         '''
-        self.file_extract = decode_from_file(torrent_file)
+        if file_extract == None:
+            self.file_extract = decode_from_file(torrent_file)
+        else:
+            self.file_extract = file_extract
         self.tracker = []
         if b'announce-list' in self.file_extract:
             for i in self.file_extract[b'announce-list']:

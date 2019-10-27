@@ -11,6 +11,7 @@ from datetime import datetime
 import tracker
 import peers
 import struct
+import part_file
 
 class torrent:
     def __init__(self, torrent_file_path = None, part_file_path = None):
@@ -54,25 +55,30 @@ class torrent:
         # If there is already downloaded file read information from it
         if (part_file_path != None and torrent_file_path == None):
             torrent_logger.debug("Reading torrent info from part file " + part_file_path)
-            # This function should initialize all torrent variables
-            part_file(file_path = part_file_path, torrent = self)
+            file_extract = part_file.get_torrent_data(part_file_path)
+            torrent_file_extract = torrent_file.torrent_file(torrent_file_path,\
+                    file_extract)
+            self.part_file = part_file.part_file(part_file_path)
         elif (torrent_file_path != None and part_file_path == None):
             # Initialise using extract from .torrent file
             torrent_file_extract = torrent_file.torrent_file(torrent_file_path)
-            self.file_extract = torrent_file_extract.file_extract
-            self.piece_len = torrent_file_extract.piece_len
-            self.name = torrent_file_extract.name
-            self.length = torrent_file_extract.length
-            self.number_of_pieces = int(self.length / self.piece_len)
-            self.trackers_list = torrent_file_extract.tracker
-            self.left = self.length
-            # Initialize all downloaded offset to zero since this is a new torrent
-            # download
-            self.lock.acquire()
-            self.downloaded_piece_offset = [0] * self.number_of_pieces
-            self.lock.release()
+            self.part_file = part_file.part_file(torrent_file_extract.name,\
+                    torrent_file_extract.file_extract)
+
         else:
             torrent_logger.error("Either of .part or .torrent file must be passed")
+        self.file_extract = torrent_file_extract.file_extract
+        self.piece_len = torrent_file_extract.piece_len
+        self.name = torrent_file_extract.name
+        self.length = torrent_file_extract.length
+        self.number_of_pieces = int(self.length / self.piece_len)
+        self.trackers_list = torrent_file_extract.tracker
+        self.left = self.length
+        # Initialize all downloaded offset to zero since this is a new torrent
+        # download
+        self.lock.acquire()
+        self.downloaded_piece_offset = [0] * self.number_of_pieces
+        self.lock.release()
 
         self.info_hash = hashlib.sha1()
         info_bencode = self.file_extract[b'info']
@@ -134,11 +140,12 @@ class torrent:
                 # TODO if length of piece in cache becomes equal to piece_len
                 # check for hash and store it in file
                 if self.part_pieces[piece_index][0] == self.piece_len:
-                    torrent_logger.info("Piece " + str(piece_index) + " downloaded\
-                            successfully")
+                    torrent_logger.info("Piece " + str(piece_index) + " downloaded successfully")
                     self.lock.acquire()
                     self.my_bitfield.add(piece_index)
                     self.lock.release()
+                    self.part_file.file_queue.put([piece_index, self.part_pieces[piece_index][1]])
+                    del self.part_pieces[piece_index]
                 # updating downloaded_offset
                 self.lock.acquire()
                 if self.downloaded_piece_offset[piece_index] == begin:
@@ -182,7 +189,10 @@ if __name__ == '__main__':
     tor.peers[peer_index].handshake()
     peer1_receiver = threading.Thread(None, tor.peers[peer_index].receiver)
     peer1_sender = threading.Thread(None, tor.peers[peer_index].sender)
+    part_file_thread = threading.Thread(None, tor.part_file.start_file_writer)
     peer1_receiver.start()
     peer1_sender.start()
+    part_file_thread.start()
     peer1_receiver.join()
     peer1_sender.join()
+    part_file_thread.join()
