@@ -260,9 +260,9 @@ class peers:
         the block size of the request.
         This sends a request message of 16KB block size or less if the requested
         block is last
-        It returns if more blocks of same piece can be requested or not
+        It returns if the request was made or not
         '''
-        if self.requested_pieces[piece_index] > self.torrent.piece_len:
+        if self.requested_pieces[piece_index] >= self.torrent.piece_len:
             return 0
         else:
             length = struct.pack("!I", 13)
@@ -333,7 +333,7 @@ class peers:
             for i in rare:
                 while requestable and request_made < num_request:
                     requestable = self.send_request(i)
-                    request_made += 1
+                    request_made += requestable
             self.torrent.lock.acquire()
             rare_freq = self.torrent.piece_freq[rare[0]]
             self.torrent.lock.release()
@@ -383,7 +383,6 @@ class peers:
             with self.state_cond_lock:
                 while not self.peer_chocking == 0:
                     self.state_cond_lock.wait()
-                peers_logger.debug("Sender - chock released")
                 # if an unchoke is received then we must start requesting block
                 # again since even if we had previously requested blocks it will
                 # be discarded

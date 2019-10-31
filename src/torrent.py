@@ -67,6 +67,7 @@ class torrent:
 
         else:
             torrent_logger.error("Either of .part or .torrent file must be passed")
+            exit()
         self.file_extract = torrent_file_extract.file_extract
         self.piece_len = torrent_file_extract.piece_len
         self.name = torrent_file_extract.name
@@ -143,9 +144,10 @@ class torrent:
                     torrent_logger.info("Piece " + str(piece_index) + " downloaded successfully")
                     self.lock.acquire()
                     self.my_bitfield.add(piece_index)
+                    self.requestable_pieces = self.requestable_pieces - self.my_bitfield
                     self.lock.release()
                     self.part_file.file_queue.put([piece_index, self.part_pieces[piece_index][1]])
-                    del self.part_pieces[piece_index]
+                    # TODO delete the store piece from self.part_pieces
                 # updating downloaded_offset
                 self.lock.acquire()
                 if self.downloaded_piece_offset[piece_index] == begin:
