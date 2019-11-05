@@ -87,6 +87,7 @@ class part_file:
                         block = self.file.read(request[2])
                         self.peers_piece_queue.put([piece_index, request[1], request[2], block])
                         break
+                self.file.seek(0, 2)
 
             time.sleep(1)
             self.lock.acquire()
