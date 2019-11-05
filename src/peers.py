@@ -310,6 +310,17 @@ class peers:
             self.am_interested = 1
         self.state_lock.release()
 
+    def send_piece(self, piece_index, piece_begin, piece_length, piece):
+        length = struct.pack("!I", 9 + piece_length)
+        identify = struct.pack("!B", 7)
+        index = struct.pack("!I", piece_index)
+        begin = struct.pack("!I", piece_begin)
+        block = piece
+        packet = length + identify + index + begin + block
+        peers_logger.debug("Sending piece " + str(piece_index) + " starting from\
+                 " + str(piece_begin) + " of length " + str(piece_length))
+        self.locked_socket_send(packet)
+
     # implement rarest first algorithm(the piece which is rarest and which I do
     # not have and which is not already
     # TODO requested to the same peer, if all pieces are requested atleast once
@@ -390,15 +401,20 @@ class peers:
                     self.request_rarest_first(4 - self.num_requested_pieces) # send how many request are need to be send as argument and it is not necessary that it will send that many request, will return false or 0 if no request can be made TODO in such case(it may be optimistic unchock) dont disconnect main_peer will call to quit if no piece is receive after long time
 
             # check if there is any request from receiver
-            receiver_request = self.request.get()
-            if receiver_request[0] == 7:
-                self.num_requested_pieces -= 1
-            # send peer blocks which are present in peer_request
-
-
-
-
-
+            try:
+                receiver_request = self.request.get_nowait()
+                if receiver_request[0] == 7:
+                    self.num_requested_pieces -= 1
+                # if there is a request of piece from peer send it to part_file
+                elif receiver_request[0] == 6:
+                    self.torrent.part_file.peer_reuquest_queue.put(receiver_request[1:])
+            except Empty:
+                pass
+            try:
+                requested_piece = self.torrent.part_file.peers_piece_queue.get_nowait()
+                self.send_piece(requested_piece[0], requested_piece[1], requested_piece[2], requested_piece[3])
+            except Empty:
+                pass
             time.sleep(1)
             self.quit_lock.acquire()
         self.quit_lock.release()

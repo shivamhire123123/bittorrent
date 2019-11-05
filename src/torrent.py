@@ -52,24 +52,11 @@ class torrent:
         self.socket_for_peer = socket(AF_INET, SOCK_STREAM)
         self.port_for_peer = self.socket_for_peer.getsockname()[1]
 
-        # If there is already downloaded file read information from it
-        if (part_file_path != None and torrent_file_path == None):
-            torrent_logger.debug("Reading torrent info from part file " + part_file_path)
-            file_extract = part_file.get_torrent_data(part_file_path)
-            torrent_file_extract = torrent_file.torrent_file(torrent_file_path,\
-                    file_extract)
-            self.part_file = part_file.part_file(part_file_path)
-        elif (torrent_file_path != None and part_file_path == None):
-            # Initialise using extract from .torrent file
-            torrent_file_extract = torrent_file.torrent_file(torrent_file_path)
-            self.part_file = part_file.part_file(torrent_file_extract.name,\
-                    torrent_file_extract.file_extract)
-
-        else:
-            torrent_logger.error("Either of .part or .torrent file must be passed")
-            exit()
+        # Initialise using extract from .torrent file
+        torrent_file_extract = torrent_file.torrent_file(torrent_file_path)
         self.file_extract = torrent_file_extract.file_extract
         self.piece_len = torrent_file_extract.piece_len
+        self.piece_hash = torrent_file_extract.piece
         self.name = torrent_file_extract.name
         self.length = torrent_file_extract.length
         self.number_of_pieces = int(self.length / self.piece_len)
@@ -81,16 +68,20 @@ class torrent:
         self.downloaded_piece_offset = [0] * self.number_of_pieces
         self.lock.release()
 
+        # If there is already downloaded file read information from it
+        if (part_file_path != None):
+            torrent_logger.debug("Reading already downloaded piece info from part file " + part_file_path)
+            self.my_bitfield |= part_file.get_piece_data(part_file_path)
+            self.part_file = part_file.part_file(part_file_path)
+        else:
+            self.part_file = part_file.part_file(self.name + ".part")
+
         self.info_hash = hashlib.sha1()
         info_bencode = self.file_extract[b'info']
         self.info_hash.update(bencodepy.encode(info_bencode))
 
         # Make a trackers object from tracker_list
         self.trackers = tracker.tracker(self, self.trackers_list)
-
-        # If .part file is not present create it
-        if (torrent_file_path != None):
-            torrent_logger.error(".part file code not implemented")
 
         self.lock.acquire()
         self.piece_freq = [0] * self.number_of_pieces
@@ -103,7 +94,6 @@ class torrent:
         # A cache to store partially downloaded pieces, this will be access by
         # main peer only
         self.part_pieces = dict()
-
 
     def get_peers(self, num_of_peers = 20, peer_list = None):
         if peer_list == None:
@@ -124,6 +114,13 @@ class torrent:
         for peer in self.peer_list:
             self.peers.append(peers.peers(peer[0], peer[1], self))
 
+    def check_hash(self, piece_index):
+        sha1 = hashlib.sha1()
+        sha1.update(self.part_pieces[piece_index][1])
+        if(sha1.digest() == self.piece_hash[20 * piece_index: 20 * piece_index + 20]):
+            return 1
+        else:
+            return 0
 
     # even if this function is name recv_piece it is intended to receive a block
     # this function will be called by receivers of peers
@@ -142,11 +139,14 @@ class torrent:
                 # check for hash and store it in file
                 if self.part_pieces[piece_index][0] == self.piece_len:
                     torrent_logger.info("Piece " + str(piece_index) + " downloaded successfully")
-                    self.lock.acquire()
-                    self.my_bitfield.add(piece_index)
-                    self.requestable_pieces = self.requestable_pieces - self.my_bitfield
-                    self.lock.release()
-                    self.part_file.file_queue.put([piece_index, self.part_pieces[piece_index][1]])
+                    if(self.check_hash(piece_index) == 1):
+                        self.lock.acquire()
+                        self.my_bitfield.add(piece_index)
+                        self.requestable_pieces = self.requestable_pieces - self.my_bitfield
+                        self.lock.release()
+                        self.part_file.file_queue.put([piece_index, self.part_pieces[piece_index][1]])
+                    else:
+                        torrent_logger.error("Piece hash didnt match for piece " + str(piece_index))
                     # TODO delete the store piece from self.part_pieces
                 # updating downloaded_offset
                 self.lock.acquire()
@@ -178,7 +178,10 @@ class torrent:
         return rare
 
 if __name__ == '__main__':
-    tor = torrent(sys.argv[1])
+    if len(sys.argv) == 2:
+        tor = torrent(sys.argv[1])
+    else:
+        tor = torrent(sys.argv[1], sys.argv[2])
     peer_list = [['62.210.209.146', 51413], ['185.44.107.109', 51413],
             ['77.13.17.35', 51413], ['185.203.56.6', 61005], ['82.56.184.243',
                 51413], ['110.175.89.172', 6904], ['89.178.161.105', 51413],
