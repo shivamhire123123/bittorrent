@@ -408,12 +408,12 @@ class peers:
                 # if there is a request of piece from peer send it to part_file
                 elif receiver_request[0] == 6:
                     self.torrent.part_file.peer_reuquest_queue.put(receiver_request[1:])
-            except Empty:
+            except queue.Empty:
                 pass
             try:
                 requested_piece = self.torrent.part_file.peers_piece_queue.get_nowait()
                 self.send_piece(requested_piece[0], requested_piece[1], requested_piece[2], requested_piece[3])
-            except Empty:
+            except queue.Empty:
                 pass
             time.sleep(1)
             self.quit_lock.acquire()
