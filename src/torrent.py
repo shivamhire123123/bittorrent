@@ -12,6 +12,7 @@ import tracker
 import peers
 import struct
 import part_file
+import random
 
 class torrent:
     def __init__(self, torrent_file_path = None, part_file_path = None):
@@ -51,6 +52,9 @@ class torrent:
         # Creating TCP socket to accept connections from other peers
         self.socket_for_peer = socket(AF_INET, SOCK_STREAM)
         self.port_for_peer = self.socket_for_peer.getsockname()[1]
+        self.socket_for_peer.listen(1)
+        torrent_logger.debug("Listening on port " + str(self.port_for_peer) +\
+                "for other peers connection")
 
         # Initialise using extract from .torrent file
         torrent_file_extract = torrent_file.torrent_file(torrent_file_path)
@@ -83,6 +87,9 @@ class torrent:
         # Make a trackers object from tracker_list
         self.trackers = tracker.tracker(self, self.trackers_list)
 
+        # List of peers object
+        self.peers = []
+
         self.lock.acquire()
         self.piece_freq = [0] * self.number_of_pieces
         self.requested_pieces = [0] * self.number_of_pieces
@@ -95,24 +102,40 @@ class torrent:
         # main peer only
         self.part_pieces = dict()
 
-    def get_peers(self, num_of_peers = 20, peer_list = None):
+    def add_peer(self, peer_ip, peer_port):
+        '''
+        Add a peer with ip peer_ip and port peer_port to the list of available
+        peers
+        '''
+        self.peers.append(peers.peers(peer_ip, peer_port, self))
+
+    def get_random_peer(self):
+        '''
+        Return an object of random peer
+        '''
+        peer_index = random.randint(0, len(self.peers))
+        return self.peers[peer_index]
+
+    def get_peers_from_tracker(self, num_of_peers = 20, peer_list = None):
+        '''
+        Get max num_of_peers from trackers and add it to available peers.
+        It can also take a list of ip and port tuple as argument and add it to
+        available peers.
+        '''
         if peer_list == None:
-            self.peer_list = []
+            peer_list = []
             temp_list = []
             for tracker in self.trackers.http_tracker:
                 temp_list = tracker.get_peers_from_tracker(num_of_peers)
                 torrent_logger.debug("Got " + str(len(temp_list)) + " peers")
-                self.peer_list += temp_list
+                peer_list += temp_list
                 num_of_peers -= len(temp_list)
                 torrent_logger.debug(str(num_of_peers) + " peers remaning")
                 if num_of_peers <= 0:
                     num_of_peers = 0
                     break
-        else:
-            self.peer_list = peer_list
-        self.peers = []
-        for peer in self.peer_list:
-            self.peers.append(peers.peers(peer[0], peer[1], self))
+        for peer in peer_list:
+            self.add_peer(peer[0], peer[1])
 
     def check_hash(self, piece_index):
         sha1 = hashlib.sha1()
@@ -187,7 +210,7 @@ if __name__ == '__main__':
                 51413], ['110.175.89.172', 6904], ['89.178.161.105', 51413],
             ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21'
                 , 51413]]
-    tor.get_peers(10, peer_list = peer_list)
+    tor.get_peers_from_tracker(10, peer_list = peer_list)
     peer_index = 3
     tor.peers[peer_index].socket = socket(AF_INET, SOCK_STREAM)
     tor.peers[peer_index].socket.connect((peer_list[peer_index][0], peer_list[peer_index][1]))
