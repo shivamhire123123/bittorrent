@@ -36,8 +36,8 @@ file_handler = logging.FileHandler('bittorrent.log')
 file_handler.setLevel(logging.DEBUG)
 
 # Creating formatters
-for_user_formatter = logging.Formatter('%(levelname)s - %(message)s')
-verbose_formatter = logging.Formatter('%(levelname)s - %(name)s - %(filename)s:%(funcName)s:%(lineno)d - %(message)s')
+for_user_formatter = logging.Formatter('%(threadName)s - %(levelname)s - %(message)s')
+verbose_formatter = logging.Formatter('%(threadName)s - %(levelname)s - %(name)s - %(filename)s:%(funcName)s:%(lineno)d - %(message)s')
 file_handler.setFormatter(verbose_formatter)
 console_handler.setFormatter(for_user_formatter)
 

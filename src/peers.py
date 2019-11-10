@@ -55,7 +55,7 @@ class peers:
         # Use to communicate to peer
         self.ip = ip
         self.connection_port = port
-        self.socket = None
+        self.socket = socket(AF_INET, SOCK_STREAM)
         self.socket_lock = threading.Lock()
         # This socket object will be made by main_peer thread since it will be
         # point less to create it here, it will just use up number of sockets
@@ -84,6 +84,18 @@ class peers:
         self.requested_pieces = self.torrent.downloaded_piece_offset.copy()
         self.torrent.lock.release()
         self.num_requested_pieces = 0
+
+    def connect(self):
+        '''
+        Try to connect to the peer for time secs if the peer do not respond
+        int that much time return 0 else return 1 on successful connection
+        '''
+        self.socket.settimeout(1)
+        try:
+            self.socket.connect((self.ip, self.connection_port))
+            return 1
+        except:
+            return 0
 
     def locked_socket_send(self, data):
         l = 0

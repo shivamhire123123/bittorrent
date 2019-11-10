@@ -123,6 +123,12 @@ class torrent:
         peer_index = random.randint(0, len(self.peers))
         return self.peers[peer_index]
 
+    def get_all_peers(self):
+        '''
+        Return a list which have all peers object
+        '''
+        return self.peers.copy()
+
     def get_peers_from_tracker(self, num_of_peers = 20, peer_list = None):
         '''
         Get max num_of_peers from trackers and add it to available peers.
@@ -221,14 +227,17 @@ if __name__ == '__main__':
             ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21'
                 , 51413]]
     tor.get_peers_from_tracker(10, peer_list = peer_list)
-    peer_index = 0
+    peer_index = 4
     tor.peers[peer_index].socket = socket(AF_INET, SOCK_STREAM)
     tor.peers[peer_index].socket.connect((peer_list[peer_index][0], peer_list[peer_index][1]))
     tor.peers[peer_index].handshake()
     tor.peers[peer_index].send_bitfield()
     peer1_receiver = threading.Thread(None, tor.peers[peer_index].receiver)
+    peer1_receiver.name = "Peer1_receiver_thread"
     peer1_sender = threading.Thread(None, tor.peers[peer_index].sender)
+    peer1_sender.name = "Peer1_sender_thread"
     part_file_thread = threading.Thread(None, tor.part_file.start_file_writer)
+    part_file_thread.name = "part_file_thread"
     peer1_receiver.start()
     peer1_sender.start()
     part_file_thread.start()
