@@ -22,7 +22,7 @@ class part_file:
         self.file_queue = queue.Queue()
         # this queue should have data in following format
         # [piece index][begin][length]
-        self.peer_reuquest_queue = queue.Queue()
+        self.peer_request_queue = queue.Queue()
         # format - [piece index][begin][length]
         self.peers_piece_queue = queue.Queue()
         self.file = open(file_path, "ba+")
@@ -62,20 +62,22 @@ class part_file:
             self.lock.release()
             while not self.file_queue.empty():
                 piece = self.file_queue.get()
+                file_logger.debug("Found piece " + str(piece[0]) + " writing it to file")
                 self.file.write(struct.pack("I", piece[0]))
                 self.file.write(struct.pack("I", len(piece[1])))
                 self.file.write(piece[1])
                 file_logger.info("Written piece " + str(piece[0]) + " into file")
-            if not self.peer_reuquest_queue.empty():
-                request = self.peer_reuquest_queue.get()
-                self.file.seek(0, 1)
+            if not self.peer_request_queue.empty():
+                request = self.peer_request_queue.get()
+                file_logger.debug("Found piece request for piece " + str(request))
+                self.file.seek(0)
                 piece_index = self.file.read(4)
                 piece_size = self.file.read(4)
-                while(piece_size):
+                while(piece_size != b''):
                     piece_index = struct.unpack("I", piece_index)[0]
                     piece_size = struct.unpack("I", piece_size)[0]
                     if(piece_index != request[0]):
-                        self.file.seek(piece_size)
+                        self.file.seek(piece_size, 1)
                         piece_index = self.file.read(4)
                         piece_size = self.file.read(4)
                         if(len(piece_size) == 0):
@@ -83,9 +85,9 @@ class part_file:
                             break
                     else:
                         file_logger.debug("Found piece " + str(piece_index) + " which was requested by peer")
-                        self.file.seek(request[1])
+                        self.file.seek(request[1], 1)
                         block = self.file.read(request[2])
-                        self.peers_piece_queue.put([piece_index, request[1], request[2], block])
+                        self.peers_piece_queue.put([request[0], request[1], request[2], block])
                         break
                 self.file.seek(0, 2)
 

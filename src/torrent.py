@@ -51,10 +51,11 @@ class torrent:
 
         # Creating TCP socket to accept connections from other peers
         self.socket_for_peer = socket(AF_INET, SOCK_STREAM)
+        self.socket_for_peer.bind(('', 0))
         self.port_for_peer = self.socket_for_peer.getsockname()[1]
         self.socket_for_peer.listen(1)
         torrent_logger.debug("Listening on port " + str(self.port_for_peer) +\
-                "for other peers connection")
+                " for other peers connection")
 
         # Initialise using extract from .torrent file
         torrent_file_extract = torrent_file.torrent_file(torrent_file_path)
@@ -64,10 +65,14 @@ class torrent:
         self.name = torrent_file_extract.name
         self.length = torrent_file_extract.length
         self.number_of_pieces = int(self.length / self.piece_len)
+        torrent_logger.debug("Number of pieces :- " + str(self.number_of_pieces))
         self.trackers_list = torrent_file_extract.tracker
         self.left = self.length
-        # Initialize all downloaded offset to zero since this is a new torrent
-        # download
+        # Initializing all downloaded piece offset to zero since
+        # 1) this is a new torrent and therefore we cant have already downloaded
+        # pieces
+        # 2) this is resume of downloaded file and we dont store partially
+        # downloaded piece in file
         self.lock.acquire()
         self.downloaded_piece_offset = [0] * self.number_of_pieces
         self.lock.release()
@@ -105,9 +110,11 @@ class torrent:
     def add_peer(self, peer_ip, peer_port):
         '''
         Add a peer with ip peer_ip and port peer_port to the list of available
-        peers
+        peers. Return the peer object
         '''
-        self.peers.append(peers.peers(peer_ip, peer_port, self))
+        new_peer = peers.peers(peer_ip, peer_port, self)
+        self.peers.append(new_peer)
+        return new_peer
 
     def get_random_peer(self):
         '''
@@ -137,9 +144,9 @@ class torrent:
         for peer in peer_list:
             self.add_peer(peer[0], peer[1])
 
-    def check_hash(self, piece_index):
+    def check_hash(self, piece, piece_index):
         sha1 = hashlib.sha1()
-        sha1.update(self.part_pieces[piece_index][1])
+        sha1.update(piece)
         if(sha1.digest() == self.piece_hash[20 * piece_index: 20 * piece_index + 20]):
             return 1
         else:
@@ -162,7 +169,7 @@ class torrent:
                 # check for hash and store it in file
                 if self.part_pieces[piece_index][0] == self.piece_len:
                     torrent_logger.info("Piece " + str(piece_index) + " downloaded successfully")
-                    if(self.check_hash(piece_index) == 1):
+                    if(self.check_hash(self.part_pieces[piece_index][1], piece_index) == 1):
                         self.lock.acquire()
                         self.my_bitfield.add(piece_index)
                         self.requestable_pieces = self.requestable_pieces - self.my_bitfield
@@ -179,7 +186,7 @@ class torrent:
             else:
                 torrent_logger.error("non continuous block received for piece "\
                         + str(piece_index) + " block is being discarded")
-                torrent_logger.error("Expected was " + str(self.part_pieces[piece_index][0])\
+                torrent_logger.error("Expected was " + str(self.part_pieces[piece_index][0])
                         + " but received " + str(begin))
         else:
             self.part_pieces[piece_index] = [len(response[8:]), response[8:]]
@@ -192,8 +199,11 @@ class torrent:
         frequencey which itself is more than greater_than
         '''
         rare = []
-        rare_freq = min(self.piece_freq[i] for i in requestable \
-                if self.piece_freq[i] > greater_than)
+        freq = [self.piece_freq[i] for i in requestable if self.piece_freq[i] > greater_than]
+        if len(freq) != 0:
+            rare_freq = min(freq)
+        else:
+            rare_freq = -1
         for piece in requestable:
             if self.piece_freq[piece] == rare_freq:
                 rare.append(piece)
@@ -205,16 +215,17 @@ if __name__ == '__main__':
         tor = torrent(sys.argv[1])
     else:
         tor = torrent(sys.argv[1], sys.argv[2])
-    peer_list = [['62.210.209.146', 51413], ['185.44.107.109', 51413],
+    peer_list = [['127.0.0.1', int(sys.argv[3])], ['62.210.209.146', 51413], ['185.44.107.109', 51413],
             ['77.13.17.35', 51413], ['185.203.56.6', 61005], ['82.56.184.243',
                 51413], ['110.175.89.172', 6904], ['89.178.161.105', 51413],
             ['144.217.176.169', 9366], ['82.64.50.120', 51413], ['146.0.139.21'
                 , 51413]]
     tor.get_peers_from_tracker(10, peer_list = peer_list)
-    peer_index = 3
+    peer_index = 0
     tor.peers[peer_index].socket = socket(AF_INET, SOCK_STREAM)
     tor.peers[peer_index].socket.connect((peer_list[peer_index][0], peer_list[peer_index][1]))
     tor.peers[peer_index].handshake()
+    tor.peers[peer_index].send_bitfield()
     peer1_receiver = threading.Thread(None, tor.peers[peer_index].receiver)
     peer1_sender = threading.Thread(None, tor.peers[peer_index].sender)
     part_file_thread = threading.Thread(None, tor.part_file.start_file_writer)

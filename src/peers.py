@@ -8,6 +8,8 @@ import threading
 import queue
 import select
 import time
+from bitstring import BitArray, BitStream
+import math
 
 def filter_tracker(tracker, protocol):
     ''' This function takes a list of strings contaning url to different trackers
@@ -84,7 +86,6 @@ class peers:
         self.num_requested_pieces = 0
 
     def locked_socket_send(self, data):
-        peers_logger.debug("Sending : " + str(data[:255]) + " to " + str(self.ip))
         l = 0
         while(l < len(data)):
             reader, writer, error = select.select([], [self.socket], [])
@@ -97,7 +98,6 @@ class peers:
             reader, writer, error = select.select([self.socket], [], [])
             with self.socket_lock:
                 response += self.socket.recv(length - len(response))
-        peers_logger.debug("Received : " + str(response[:255]) + " from " + str(self.ip))
         return response
 
     def handshake(self):
@@ -180,22 +180,25 @@ class peers:
             bit_pos = 0
             for j in range(8):
                 if (response[i] >> j) & 1:
-                    piece_number = i * 8 + j
-                    self.bitfield.add(piece_number)
+                    piece_number = i * 8 + 7 - j
+                    with self.bitfield_lock:
+                        self.bitfield.add(piece_number)
                     with self.torrent.lock:
                         self.torrent.piece_freq[piece_number] += 1
+        with self.bitfield_lock:
+            peers_logger.debug("Peers bitfield :- " + str(self.bitfield))
 
     def recv_request(self, response):
         temp = struct.unpack("!III", response)
         piece_id, begin, length = temp[0], temp[1], temp[2]
-        peers_logger.debug("Received request from " + self.ip + " of " + str(piece_id)
-                        + str(begin) + str(length))
+        peers_logger.debug("Received request from " + self.ip + " of " + str(piece_id) + " " + str(begin) + " " +  str(length))
         self.request.put([6, piece_id, begin, length])
 
     # even if this function is name recv_piece it is intended to receive a piece
     def recv_piece(self, response):
         peers_logger.debug("Received piece from " + self.ip + " of length " +\
                 str(len(response)))
+        peers_logger.debug("Received " + str(response[:255]))
         self.request.put([7])
         self.torrent.recv_piece(response)
 
@@ -218,7 +221,6 @@ class peers:
             response = self.locked_socket_recv(4)
             # Check if response have handshake(1st byte is 19) or other messages
             if response[0] == 19 and response[1:] == b'Bit':
-                peers_logger.debug("Received handshake, other functionality not implemented")
                 response = self.locked_socket_recv(64)
                 # request sender to send handshake
                 self.request.put([19])
@@ -319,6 +321,31 @@ class peers:
         packet = length + identify + index + begin + block
         peers_logger.debug("Sending piece " + str(piece_index) + " starting from\
                  " + str(piece_begin) + " of length " + str(piece_length))
+        peers_logger.debug("Sending piece " + str(packet[:255]))
+        self.locked_socket_send(packet)
+
+    def send_bitfield(self):
+        torrent = self.torrent
+        have_piece_set = torrent.my_bitfield
+        bitfield = BitArray()
+        for i in range(torrent.number_of_pieces):
+            if i in have_piece_set:
+                bitfield += '0b1'
+            else:
+                bitfield += '0b0'
+        bitfield += 0b0 * (8 - (torrent.number_of_pieces % 8))
+        num_bytes = math.ceil(torrent.number_of_pieces / 8)
+        bitfield = bitfield.unpack(str(num_bytes) + '*uint:8')
+        peers_logger.debug("Sending bitfield :" + str(bitfield))
+        bitfield = bytes(bitfield)
+        bits = b''
+        for i in bitfield:
+            bits += struct.pack("!B", i)
+        bitfield = bits
+        length = struct.pack("!I", 1 + len(bitfield))
+        identify = struct.pack("!B", 5)
+        packet = length + identify + bitfield
+        peers_logger.debug("Sending " + str(packet))
         self.locked_socket_send(packet)
 
     # implement rarest first algorithm(the piece which is rarest and which I do
@@ -332,7 +359,8 @@ class peers:
     # another way would be to keep track of piece in request(i.e. piece for whic
     # request for starting block is already sent)
     def request_rarest_first(self, num_request):
-        requestable_pieces = self.torrent.requestable_pieces & self.bitfield
+        with self.bitfield_lock:
+            requestable_pieces = self.torrent.requestable_pieces & self.bitfield
         rare_freq = 0
         rare = []
         request_made = 0
@@ -407,7 +435,7 @@ class peers:
                     self.num_requested_pieces -= 1
                 # if there is a request of piece from peer send it to part_file
                 elif receiver_request[0] == 6:
-                    self.torrent.part_file.peer_reuquest_queue.put(receiver_request[1:])
+                    self.torrent.part_file.peer_request_queue.put(receiver_request[1:])
             except queue.Empty:
                 pass
             try:
